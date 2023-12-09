@@ -1,0 +1,49 @@
+{
+  "project_info": {
+    "project_number": "886465118366",
+    "firebase_url": "https://embs-challenge-499ae-default-rtdb.firebaseio.com",
+    "project_id": "embs-challenge-499ae",
+    "storage_bucket": "embs-challenge-499ae.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:886465118366:android:de1613845b8fefc0693b8f",
+        "android_client_info": {
+          "package_name": "com.example.doccare_hub"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyALXtkiHAglIcV4qxSUngw6Yd6jtDcK0SE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:886465118366:android:cb88215b65b2a1cd693b8f",
+        "android_client_info": {
+          "package_name": "com.example.testfirebase"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyALXtkiHAglIcV4qxSUngw6Yd6jtDcK0SE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

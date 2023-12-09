@@ -1,0 +1,434 @@
+import 'dart:math';
+import 'dart:async';
+import 'package:animator/animator.dart';
+import 'package:firebase_database/firebase_database.dart';
+
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+
+import 'package:intl/intl.dart';
+import 'package:testfirebase/Views/HR/pageconseihr.dart';
+import 'package:testfirebase/api/MedicalMeasureApi.dart';
+
+class EcgPage extends StatefulWidget {
+  EcgPage({super.key, required this.lang, required this.id});
+  final String lang;
+  final String id;
+
+  @override
+  _EcgPageState createState() => _EcgPageState();
+}
+
+class _EcgPageState extends State<EcgPage> with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _animation;
+
+  StreamController<int?> _freqStreamController = StreamController<int?>();
+  Stream<int?> get freqStream => _freqStreamController.stream;
+  List<int> freqValues = [];
+
+  late Timer _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    startTimer();
+
+    _animationController = AnimationController(
+      vsync: this,
+      duration: Duration(seconds: 2),
+    );
+
+    _animation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.linear,
+      ),
+    );
+
+    _animationController.repeat(reverse: true);
+
+    Timer.periodic(Duration(seconds: 1), (timer) {
+      if (_animationController != null && _animationController.isAnimating) {
+        _animationController.forward(from: 0);
+      }
+    });
+  }
+
+  void startTimer() {
+    _timer = Timer.periodic(Duration(milliseconds: 200), (timer) {
+      // Read data from Firebase every 200 milliseconds
+      readData();
+    });
+
+    // Stop the timer after 5 seconds
+    Timer(Duration(seconds: 5), () {
+      _timer.cancel();
+      calculateMean();
+    });
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    _freqStreamController.close();
+    super.dispose();
+  }
+
+  DatabaseReference dbRef = FirebaseDatabase.instance.ref('app');
+
+  void readData() {
+    dbRef.child('freq').onValue.listen((event) {
+      if (event.snapshot.exists) {
+        int? freq = event.snapshot.value as int?;
+        _freqStreamController.add(freq);
+        freqValues.add(freq ?? 0);
+        print(freqValues);
+        print(freqValues.length);
+      } else {
+        print('No data available.');
+      }
+    });
+  }
+
+  void calculateMean() {
+    if (freqValues.isNotEmpty) {
+      double mean = 0;
+      for (int i = 0; i < freqValues.length; i++) mean += freqValues[i];
+      mean /= freqValues.length;
+
+      if (widget.id != "0") {
+        MedicalMeasureApi.sendMedicalMeasurements({
+          "cardiacFrequency": mean,
+          "oxygenSaturation": mean,
+          "state": 1,
+          "date": null,
+          "patientId": 1
+        });
+      }
+      // double mean = freqValues.reduce((a, b) => a + b) / freqValues.length;
+      print('Mean freq value: $mean');
+      // Add your further processing or UI updates with the mean value here
+    } else {
+      print('No freq values recorded.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    double _width = MediaQuery.of(context).size.width;
+    return Scaffold(
+      body: StreamBuilder<int?>(
+        stream: freqStream,
+        builder: (context, snapshot) {
+          if (snapshot.hasData) {
+            int? freq = snapshot.data;
+            // Update the background color based on real-time data
+            Color bgColor = changeColor(freq);
+            return Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.white, bgColor], // Initial colors
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Container(child: freqAnimation()),
+                    SizedBox(
+                      height: 100,
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '${freq}',
+                          style: TextStyle(fontSize: 50),
+                        ),
+                        Text(
+                          "bpm",
+                          style: TextStyle(fontSize: 20),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      getRes(freq),
+                      style: TextStyle(fontSize: 40),
+                    ),
+                    TextButton.icon(
+                      onPressed: () {
+                        _Modelsheet(context);
+                      },
+                      icon: Icon(Icons.forward),
+                      label: Text(getConseil()),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          } else if (snapshot.hasError) {
+            return Text('Error: ${snapshot.error}');
+          } else {
+            return Center(child: Text('Loading...'));
+          }
+        },
+      ),
+    );
+  }
+
+  void _Modelsheet(context) {
+    showModalBottomSheet<void>(
+      shape: RoundedRectangleBorder(
+        //the rounded corner is created here
+        borderRadius: BorderRadius.circular(10.0),
+      ),
+      context: context,
+      builder: (BuildContext context) {
+        //return MyCustomForm();
+
+        return Container(
+            height: 600, child: PageConseilHR(lang: widget.lang, hr: 10));
+      },
+    );
+  }
+
+  Color changeColor(int? hb) {
+    if (hb == null) {
+      // Handle the case where freq is null, e.g., return a default color.
+      return Colors.transparent;
+    }
+
+    if (hb < 80) {
+      return Colors.green.shade300;
+    } else if (80 <= hb && hb <= 84) {
+      return Colors.green;
+    } else if (85 <= hb && hb <= 89) {
+      return Colors.yellow.shade300;
+    } else if (90 <= hb && hb <= 99) {
+      return Colors.red.shade300;
+    } else if (100 <= hb && hb <= 109) {
+      return Colors.red;
+    } else if (110 <= hb) {
+      return Colors.red.shade900;
+    }
+
+    return Colors.transparent;
+  }
+
+  String getConseil() {
+    switch (widget.lang) {
+      case 'fr':
+        return Intl.message('Conseil', name: 'clickMeText', locale: 'fr');
+      case 'en':
+        return Intl.message('Advise', name: 'clickMeText', locale: 'en');
+      case 'ar':
+        return Intl.message('نصيحة', name: 'clickMeText', locale: 'ar');
+      default:
+        return Intl.message('Conseil', name: 'clickMeText', locale: 'en');
+    }
+  }
+
+  String getResult1() {
+    switch (widget.lang) {
+      case 'fr':
+        return Intl.message('Optimale', name: 'clickMeText', locale: 'fr');
+      case 'en':
+        return Intl.message('Optimal', name: 'clickMeText', locale: 'en');
+      case 'ar':
+        return Intl.message('الأمثل', name: 'clickMeText', locale: 'ar');
+      default:
+        return Intl.message('Optimal', name: 'clickMeText', locale: 'en');
+    }
+  }
+
+  String getResult2() {
+    switch (widget.lang) {
+      case 'fr':
+        return Intl.message('Normale', name: 'clickMeText', locale: 'fr');
+      case 'en':
+        return Intl.message('Normal', name: 'clickMeText', locale: 'en');
+      case 'ar':
+        return Intl.message('طبيعي', name: 'clickMeText', locale: 'ar');
+      default:
+        return Intl.message('Normal', name: 'clickMeText', locale: 'en');
+    }
+  }
+
+  String getResult3() {
+    switch (widget.lang) {
+      case 'fr':
+        return Intl.message('Normale Haute', name: 'clickMeText', locale: 'fr');
+      case 'en':
+        return Intl.message('Haut Normal', name: 'clickMeText', locale: 'en');
+      case 'ar':
+        return Intl.message('ارتفاع طبيعي', name: 'clickMeText', locale: 'ar');
+      default:
+        return Intl.message('Normale Haute', name: 'clickMeText', locale: 'en');
+    }
+  }
+
+  String getResult4() {
+    switch (widget.lang) {
+      case 'fr':
+        return Intl.message('Hypertension grade 1',
+            name: 'clickMeText', locale: 'fr');
+      case 'en':
+        return Intl.message('Hypertension grade 1',
+            name: 'clickMeText', locale: 'en');
+      case 'ar':
+        return Intl.message('ارتفاع ضغط الدم الصنف 1',
+            name: 'clickMeText', locale: 'ar');
+      default:
+        return Intl.message('Hypertension grade 1',
+            name: 'clickMeText', locale: 'en');
+    }
+  }
+
+  String getResult5() {
+    switch (widget.lang) {
+      case 'fr':
+        return Intl.message('Hypertension grade 2',
+            name: 'clickMeText', locale: 'fr');
+      case 'en':
+        return Intl.message('Hypertension grade 2',
+            name: 'clickMeText', locale: 'en');
+      case 'ar':
+        return Intl.message('ارتفاع ضغط الدم الصنف 2',
+            name: 'clickMeText', locale: 'ar');
+      default:
+        return Intl.message('Hypertension grade 2',
+            name: 'clickMeText', locale: 'en');
+    }
+  }
+
+  String getResult6() {
+    switch (widget.lang) {
+      case 'fr':
+        return Intl.message('Hypertension grade 3',
+            name: 'clickMeText', locale: 'fr');
+      case 'en':
+        return Intl.message('Hypertension grade 3',
+            name: 'clickMeText', locale: 'en');
+      case 'ar':
+        return Intl.message('ارتفاع ضغط الدم الصنف 3',
+            name: 'clickMeText', locale: 'ar');
+      default:
+        return Intl.message('Hypertension grade 3',
+            name: 'clickMeText', locale: 'en');
+    }
+  }
+
+  String getRes(int? hb) {
+    if (hb == null) {
+      // Handle the case where freq is null, e.g., return a default color.
+      return "loading...";
+    }
+    if (hb < 80) {
+      return getResult1();
+    } else if (80 <= hb && hb <= 84) {
+      return getResult2();
+    } else if (85 <= hb && hb <= 89) {
+      return getResult3();
+    } else if (90 <= hb && hb <= 99) {
+      return getResult4();
+    } else if (100 <= hb && hb <= 109) {
+      return getResult5();
+    } else if (110 <= hb) {
+      return getResult6();
+    }
+    return getResult1();
+  }
+}
+
+// freqAnimation class as provided earlier
+class freqAnimation extends StatefulWidget {
+  @override
+  _freqAnimationState createState() => _freqAnimationState();
+}
+
+class _freqAnimationState extends State<freqAnimation>
+    with TickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: 500),
+    );
+
+    _animation = Tween<double>(begin: 20.0, end: 30.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeInOut,
+      ),
+    );
+
+    _controller.repeat(reverse: true);
+
+    // Simulate a normal freq rhythm with a delay
+    Timer.periodic(Duration(seconds: 1000), (timer) {
+      if (_controller != null && _controller.isAnimating) {
+        _controller.forward(from: 0);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    double _width = MediaQuery.of(context).size.width;
+    return Container(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          AnimatedBuilder(
+            animation: _animation,
+            builder: (context, child) {
+              return Container(
+                height: _width / 2,
+                width: _width,
+                child: Icon(
+                  Icons.favorite,
+                  size: _animation.value * 7,
+                  color: Color(0xFFFF5757),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// EcgPainter class remains unchanged
+class EcgPainter extends CustomPainter {
+  final double animationValue;
+
+  EcgPainter(this.animationValue);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // ECG drawing logic remains unchanged
+    // ...
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) {
+    return true;
+  }
+}
